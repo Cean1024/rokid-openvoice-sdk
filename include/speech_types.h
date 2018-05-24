@@ -20,6 +20,11 @@ public:
 	std::string device_type_id;
 	std::string secret;
 	std::string device_id;
+
+	// milliseconds
+	uint32_t reconn_interval;
+	uint32_t ping_interval;
+	uint32_t no_resp_timeout;
 };
 
 enum class Lang {
@@ -30,7 +35,8 @@ enum class Lang {
 enum class Codec {
 	PCM,
 	OPU,
-	OPU2
+	OPU2,
+	MP3
 };
 
 enum class VadMode {

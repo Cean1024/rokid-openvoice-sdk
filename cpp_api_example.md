@@ -54,8 +54,8 @@ popts.device_id = "SmartDonkey";
 tts->prepare(popts);
 
 // 在prepare后任意时刻，都可以调用config修改配置
-// 默认配置codec = PCM, declaimer = ZH
-// 下面的代码将codec修改为OPU2，declaimer保持原状不变
+// 默认配置codec = PCM, declaimer = ZH, samplerate = 24000
+// 下面的代码将codec修改为OPU2，declaimer、samplerate保持原状不变
 shared_ptr<TtsOptions> topts = TtsOptions::new_instance();
 topts->set_codec(Codec::OPU2);
 tts->config(topts);
@@ -101,7 +101,7 @@ while (true) {
 
 ~ | 名称 | 类型 | 描述
 ---|---|---|---
-接口 | put_voice | | 发送语音数据, 一次speech的语音数据可分多次发送
+接口 | put\_voice | | 发送语音数据, 一次speech的语音数据可分多次发送
 参数 | id | int32 | speech id
 参数 | data | const uint8* | 语音数据
 参数 | length | uint32 | 数据长度
@@ -187,12 +187,17 @@ device\_id | string | 设备id，用于tts服务认证
 ~ | 名称 | 类型 | 描述
 ---|---|---|---
 接口 | set\_codec | | 设定编码格式，默认PCM
-参数 | codec | enum Codec | 限定值PCM, OPU2
+参数 | codec | enum Codec | 限定值PCM, OPU2, MP3
 
 ~ | 名称 | 类型 | 描述
 ---|---|---|---
 接口 | set\_declaimer | | 设定语音朗读者，默认"zh"
 参数 | declaimer | string | 限定值"zh"
+
+~ | 名称 | 类型 | 描述
+---|---|---|---
+接口 | set\_samplerate | | 设定语音采样率，默认24000
+参数 | samplerate | uint32 |
 
 #### <a id="so"></a>SpeechOptions
 
@@ -220,7 +225,7 @@ device\_id | string | 设备id，用于tts服务认证
 
 ~ | 名称 | 类型 | 描述
 ---|---|---|---
-接口 | set\_no\_intermediate_asr | | 设定是否需要服务端给出中间asr结果
+接口 | set\_no\_intermediate\_asr | | 设定是否需要服务端给出中间asr结果
 参数 | v | boolean |
 
 #### <a id="vo"></a>VoiceOptions
@@ -228,10 +233,10 @@ device\_id | string | 设备id，用于tts服务认证
 名称 | 类型 | 描述
 ---|---|---
 stack | String |
-voice_trigger | string | 激活词
-trigger_start | uint32 | 语音数据中激活词的开始位置
-trigger_length | uint32 | 激活词语音数据长度
-skill_options | string |
+voice\_trigger | string | 激活词
+trigger\_start | uint32 | 语音数据中激活词的开始位置
+trigger\_length | uint32 | 激活词语音数据长度
+skill\_options | string |
 
 ### <a id="errcode"></a>错误码
 
@@ -243,9 +248,10 @@ skill_options | string |
 4 | 服务器资源不足
 5 | 服务器忙
 6 | 服务器内部错误
+7 | 语音识别超时
 101 | 无法连接到服务器
 102 | sdk已经关闭
-103 | 请求超时
+103 | 语音请求服务器超时未响应
 104 | 未知错误
 
 ### <a id="tr"></a>TtsResult

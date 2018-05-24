@@ -17,44 +17,64 @@ void jobj_to_prepare_opts(JNIEnv* env, jobject obj, PrepareOptions& opts) {
 
 	jfieldID fld = env->GetFieldID(cls, "host", "Ljava/lang/String;");
 	jstring sv = (jstring)env->GetObjectField(obj, fld);
-	const char* str = env->GetStringUTFChars(sv, NULL);
-	if (strlen(str) > 0)
-		opts.host = str;
-	env->ReleaseStringUTFChars(sv, str);
+	const char* str;
+	if (sv != NULL) {
+		str = env->GetStringUTFChars(sv, NULL);
+		if (strlen(str) > 0)
+			opts.host = str;
+		env->ReleaseStringUTFChars(sv, str);
+	}
 
 	fld = env->GetFieldID(cls, "port", "I");
 	opts.port = env->GetIntField(obj, fld);
 
 	fld = env->GetFieldID(cls, "branch", "Ljava/lang/String;");
 	sv = (jstring)env->GetObjectField(obj, fld);
-	str = env->GetStringUTFChars(sv, NULL);
-	if (strlen(str) > 0)
-		opts.branch = str;
-	env->ReleaseStringUTFChars(sv, str);
+	if (sv != NULL) {
+		str = env->GetStringUTFChars(sv, NULL);
+		if (strlen(str) > 0)
+			opts.branch = str;
+		env->ReleaseStringUTFChars(sv, str);
+	}
 
 	fld = env->GetFieldID(cls, "key", "Ljava/lang/String;");
 	sv = (jstring)env->GetObjectField(obj, fld);
-	str = env->GetStringUTFChars(sv, NULL);
-	opts.key = str;
-	env->ReleaseStringUTFChars(sv, str);
+	if (sv != NULL) {
+		str = env->GetStringUTFChars(sv, NULL);
+		opts.key = str;
+		env->ReleaseStringUTFChars(sv, str);
+	}
 
 	fld = env->GetFieldID(cls, "device_type_id", "Ljava/lang/String;");
 	sv = (jstring)env->GetObjectField(obj, fld);
-	str = env->GetStringUTFChars(sv, NULL);
-	opts.device_type_id = str;
-	env->ReleaseStringUTFChars(sv, str);
+	if (sv != NULL) {
+		str = env->GetStringUTFChars(sv, NULL);
+		opts.device_type_id = str;
+		env->ReleaseStringUTFChars(sv, str);
+	}
 
 	fld = env->GetFieldID(cls, "secret", "Ljava/lang/String;");
 	sv = (jstring)env->GetObjectField(obj, fld);
-	str = env->GetStringUTFChars(sv, NULL);
-	opts.secret = str;
-	env->ReleaseStringUTFChars(sv, str);
+	if (sv != NULL) {
+		str = env->GetStringUTFChars(sv, NULL);
+		opts.secret = str;
+		env->ReleaseStringUTFChars(sv, str);
+	}
 
 	fld = env->GetFieldID(cls, "device_id", "Ljava/lang/String;");
 	sv = (jstring)env->GetObjectField(obj, fld);
-	str = env->GetStringUTFChars(sv, NULL);
-	opts.device_id = str;
-	env->ReleaseStringUTFChars(sv, str);
+	if (sv != NULL) {
+		str = env->GetStringUTFChars(sv, NULL);
+		opts.device_id = str;
+		env->ReleaseStringUTFChars(sv, str);
+	}
+
+	fld = env->GetFieldID(cls, "reconn_interval", "I");
+	opts.reconn_interval = env->GetIntField(obj, fld);
+	fld = env->GetFieldID(cls, "ping_interval", "I");
+	opts.ping_interval = env->GetIntField(obj, fld);
+	fld = env->GetFieldID(cls, "no_resp_timeout", "I");
+	opts.no_resp_timeout = env->GetIntField(obj, fld);
 }
 
 } // namespace speech

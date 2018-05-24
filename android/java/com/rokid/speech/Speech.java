@@ -1,5 +1,6 @@
 package com.rokid.speech;
 
+import java.io.InputStream;
 import android.util.Log;
 import android.util.SparseArray;
 import org.json.JSONObject;
@@ -24,6 +25,15 @@ public class Speech extends GenericConfig {
 		prepare(opt);
 	}
 
+	public void prepare(InputStream is) {
+		PrepareOptions opt;
+		if (is != null)
+			opt = parseConfig(is);
+		else
+			opt = new PrepareOptions();
+		prepare(opt);
+	}
+
 	public void prepare(PrepareOptions opt) {
 		_sdk_prepare(_sdk_speech, opt);
 	}
@@ -33,9 +43,13 @@ public class Speech extends GenericConfig {
 	}
 
 	public int putText(String content, SpeechCallback cb) {
+		return putText(content, cb, null);
+	}
+
+	public int putText(String content, SpeechCallback cb, VoiceOptions opt) {
 		int id;
 		synchronized (_callbacks) {
-			id = _sdk_put_text(_sdk_speech, content);
+			id = _sdk_put_text(_sdk_speech, content, opt);
 			Log.d(TAG, "put text " + content + ", id = " + id);
 			if (id > 0)
 				_callbacks.put(id, cb);
@@ -135,7 +149,7 @@ public class Speech extends GenericConfig {
 
 	private native void _sdk_release(long sdk_speech);
 
-	private native int _sdk_put_text(long sdk_speech, String content);
+	private native int _sdk_put_text(long sdk_speech, String content, VoiceOptions opt);
 
 	private native int _sdk_start_voice(long sdk_speech, VoiceOptions opt);
 
@@ -177,10 +191,21 @@ public class Speech extends GenericConfig {
 	}
 
 	public static class VoiceOptions {
+		// 当前应用栈，只记录当前应用与上一应用
 		public String stack;
+		// 当前语音包含的激活词
 		public String voice_trigger;
+		// 当前语音包含的激活词开始点
 		public int trigger_start;
+		// 当前语音包含的激活词数据长度
 		public int trigger_length;
+		// 给skill传的额外参数，json格式
+		//   媒体播放状态
+		//   当前音乐的播放进度
+		//   其它
 		public String skill_options;
+		// 当前语音的额外参数
+		//   噪声阈值
+		public String voice_extra;
 	}
 }

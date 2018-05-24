@@ -1,5 +1,6 @@
 package com.rokid.speech;
 
+import java.io.InputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.util.List;
@@ -7,21 +8,14 @@ import java.lang.reflect.Type;
 import android.util.Log;
 import org.json.JSONObject;
 
-class GenericConfig {
+public class GenericConfig {
 	private static final String TAG = "speech.GenericConfig";
 
-	protected PrepareOptions parseConfigFile(String configFile) {
+	public PrepareOptions parseConfigFile(String configFile) {
 		FileInputStream is = null;
-		byte[] content;
-		String jsonstr;
-
 		try {
 			is = new FileInputStream(configFile);
-			int size = is.available();
-			content = new byte[size];
-			is.read(content);
-			jsonstr = new String(content);
-			Log.d(TAG, "config file content = " + jsonstr);
+			return parseConfig(is);
 		} catch (Exception e) {
 			e.printStackTrace();
 			return null;
@@ -33,7 +27,31 @@ class GenericConfig {
 				}
 			}
 		}
+	}
 
+	public PrepareOptions parseConfig(InputStream is) {
+		byte[] content;
+		try {
+			int size = is.available();
+			content = new byte[size];
+			is.read(content);
+		} catch (Exception e) {
+			e.printStackTrace();
+			return null;
+		}
+		return parseConfig(content);
+	}
+
+	public PrepareOptions parseConfig(byte[] content) {
+		return parseConfig(content, 0, content.length);
+	}
+
+	public PrepareOptions parseConfig(byte[] content, int offset, int length) {
+		String jsonstr = new String(content, offset, length);
+		return parseConfig(jsonstr);
+	}
+
+	public PrepareOptions parseConfig(String jsonstr) {
 		JSONObject json_obj;
 		PrepareOptions opt;
 		try {
@@ -50,6 +68,17 @@ class GenericConfig {
 		opt.device_type_id = json_obj.optString("device_type_id", null);
 		opt.secret = json_obj.optString("secret", null);
 		opt.device_id = json_obj.optString("device_id", null);
+
+		int v;
+		v = json_obj.optInt("reconn", 0);
+		if (v > 0)
+			opt.reconn_interval = v;
+		v = json_obj.optInt("keepalive", 0);
+		if (v > 0)
+			opt.ping_interval = v;
+		v = json_obj.optInt("noresp_timeout", 0);
+		if (v > 0)
+			opt.no_resp_timeout = v;
 
 		special_config(json_obj);
 

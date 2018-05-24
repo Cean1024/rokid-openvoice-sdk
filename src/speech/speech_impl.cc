@@ -7,10 +7,7 @@ using std::shared_ptr;
 using std::mutex;
 using std::lock_guard;
 using std::make_shared;
-using rokid::open::speech::v2::SpeechRequest;
-using rokid::open::speech::v2::SpeechResponse;
-using rokid::open::speech::v1::ReqType;
-using rokid::open::speech::v1::SpeechErrorCode;
+using std::chrono::system_clock;
 
 namespace rokid {
 namespace speech {
@@ -84,6 +81,9 @@ private:
 };
 
 SpeechImpl::SpeechImpl() : initialized_(false) {
+#ifdef SPEECH_STATISTIC
+	cur_trace_info_.id = 0;
+#endif
 }
 
 bool SpeechImpl::prepare(const PrepareOptions& options) {
@@ -125,7 +125,7 @@ void SpeechImpl::release() {
 	}
 }
 
-int32_t SpeechImpl::put_text(const char* text) {
+int32_t SpeechImpl::put_text(const char* text, const VoiceOptions* options) {
 	if (!initialized_ || text == NULL)
 		return -1;
 	int32_t id = next_id();
@@ -134,6 +134,10 @@ int32_t SpeechImpl::put_text(const char* text) {
 	p->id = id;
 	p->type = SpeechReqType::TEXT;
 	p->data.reset(new string(text));
+	if (options) {
+		p->options = make_shared<VoiceOptions>();
+		*p->options = *options;
+	}
 	text_reqs_.push_back(p);
 #ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "put text %d, %s", id, text);
@@ -195,7 +199,9 @@ void SpeechImpl::cancel(int32_t id) {
 	lock_guard<mutex> req_locker(req_mutex_);
 	if (!initialized_)
 		return;
+#ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "cancel %d", id);
+#endif
 	if (id > 0) {
 		if (voice_reqs_.erase(id)) {
 			req_cond_.notify_one();
@@ -267,7 +273,13 @@ bool SpeechImpl::poll(SpeechResult& res) {
 	unique_lock<mutex> locker(resp_mutex_);
 	while (initialized_) {
 		op = controller_.front_op();
+#ifdef SPEECH_SDK_DETAIL_TRACE
+		Log::d(tag__, "SpeechImpl.poll: front op = %p", op.get());
+#endif
 		if (op.get()) {
+#ifdef SPEECH_SDK_DETAIL_TRACE
+			Log::d(tag__, "SpeechImpl.poll: front op status = %d", op->status);
+#endif
 			if (op->status == SpeechStatus::CANCELLED) {
 				if (responses_.erase(op->id)) {
 					responses_.pop(id, resin, err);
@@ -277,8 +289,10 @@ bool SpeechImpl::poll(SpeechResult& res) {
 				res.type = SPEECH_RES_CANCELLED;
 				res.err = SPEECH_SUCCESS;
 				controller_.remove_front_op();
+#ifdef SPEECH_SDK_DETAIL_TRACE
 				Log::d(tag__, "SpeechImpl.poll (%d) cancelled, "
 						"remove front op", op->id);
+#endif
 				return true;
 			} else if (op->status == SpeechStatus::ERROR) {
 				if (responses_.erase(op->id)) {
@@ -289,8 +303,10 @@ bool SpeechImpl::poll(SpeechResult& res) {
 				res.type = SPEECH_RES_ERROR;
 				res.err = op->error;
 				controller_.remove_front_op();
+#ifdef SPEECH_SDK_DETAIL_TRACE
 				Log::d(tag__, "SpeechImpl.poll (%d) error, "
 						"remove front op", op->id);
+#endif
 				return true;
 			} else {
 				poptype = responses_.pop(id, resin, err);
@@ -307,20 +323,28 @@ bool SpeechImpl::poll(SpeechResult& res) {
 						res.action = resin->action;
 						res.extra = resin->extra;
 					}
+#ifdef SPEECH_SDK_DETAIL_TRACE
 					Log::d(tag__, "SpeechImpl.poll return result "
 							"id(%d), type(%d)", res.id, res.type);
+#endif
 					if (res.type >= SPEECH_RES_END) {
+#ifdef SPEECH_SDK_DETAIL_TRACE
 						Log::d(tag__, "SpeechImpl.poll (%d) end", res.id);
+#endif
 						controller_.remove_front_op();
 					}
 					return true;
 				}
 			}
 		}
+#ifdef SPEECH_SDK_DETAIL_TRACE
 		Log::d(tag__, "SpeechImpl.poll wait");
+#endif
 		resp_cond_.wait(locker);
 	}
+#ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "SpeechImpl.poll return false, sdk released");
+#endif
 	return false;
 }
 
@@ -346,7 +370,9 @@ void SpeechImpl::send_reqs() {
 	shared_ptr<SpeechReqInfo> info;
 	bool opr;
 
+#ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "thread 'send_reqs' begin");
+#endif
 	while (true) {
 		unique_lock<mutex> locker(req_mutex_);
 		if (!initialized_)
@@ -362,9 +388,13 @@ void SpeechImpl::send_reqs() {
 			info = text_reqs_.front();
 			text_reqs_.pop_front();
 		} else {
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.send_reqs wait req available");
+#endif
 			req_cond_.wait(locker);
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.send_reqs awake");
+#endif
 			continue;
 		}
 		opr = do_ctl_change_op(info);
@@ -373,13 +403,17 @@ void SpeechImpl::send_reqs() {
 		if (opr) {
 			rv = do_request(info);
 			if (rv == 0) {
+#ifdef SPEECH_SDK_DETAIL_TRACE
 				Log::d(tag__, "SpeechImpl.send_reqs wait op finish");
+#endif
 				unique_lock<mutex> resp_locker(resp_mutex_);
 				controller_.wait_op_finish(info->id, resp_locker);
 			}
 		}
 	}
+#ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "thread 'send_reqs' quit");
+#endif
 }
 
 bool SpeechImpl::do_ctl_change_op(shared_ptr<SpeechReqInfo>& req) {
@@ -424,10 +458,10 @@ bool SpeechImpl::do_ctl_change_op(shared_ptr<SpeechReqInfo>& req) {
 
 void SpeechImpl::req_config(SpeechRequest& req,
 		const shared_ptr<VoiceOptions>& options) {
-	rokid::open::speech::v2::SpeechOptions* sopt = req.mutable_options();
-	sopt->set_lang(static_cast<rokid::open::speech::v2::Lang>(options_.lang));
-	sopt->set_codec(static_cast<rokid::open::speech::v1::Codec>(options_.codec));
-	sopt->set_vad_mode(static_cast<rokid::open::speech::v2::VadMode>(options_.vad_mode));
+	SpeechOptionsEnc* sopt = req.mutable_options();
+	sopt->set_lang(static_cast<rokid_open_speech_v2_Lang>(options_.lang));
+	sopt->set_codec(static_cast<rokid_open_speech_v1_Codec>(options_.codec));
+	sopt->set_vad_mode(static_cast<rokid_open_speech_v2_VadMode>(options_.vad_mode));
 	sopt->set_vend_timeout(options_.vend_timeout);
 	sopt->set_no_nlp(options_.no_nlp);
 	sopt->set_no_intermediate_asr(options_.no_intermediate_asr);
@@ -438,13 +472,15 @@ void SpeechImpl::req_config(SpeechRequest& req,
 		sopt->set_trigger_start(options->trigger_start);
 		sopt->set_trigger_length(options->trigger_length);
 		sopt->set_skill_options(options->skill_options);
+		sopt->set_voice_extra(options->voice_extra);
 #ifdef SPEECH_SDK_DETAIL_TRACE
 		Log::d(tag__, "VoiceOptions: stack(%s), voice_trigger(%s), "
-				"trigger_start(%u), trigger_length(%u), voice_power(%F), "
-				"skill_options(%s)",
+				"trigger_start(%u), trigger_length(%u), voice_power(%f), "
+				"skill_options(%s), voice_extra(%s)",
 				options->stack.c_str(), options->voice_trigger.c_str(),
 				options->trigger_start, options->trigger_length,
-				options->voice_power, options->skill_options.c_str());
+				options->voice_power, options->skill_options.c_str(),
+				options->voice_extra.c_str());
 #endif
 	}
 }
@@ -454,45 +490,67 @@ int32_t SpeechImpl::do_request(shared_ptr<SpeechReqInfo>& req) {
 	int32_t rv = 1;
 	switch (req->type) {
 		case SpeechReqType::TEXT: {
-			shared_ptr<VoiceOptions> empty_opt;
 			treq.set_id(req->id);
-			treq.set_type(ReqType::TEXT);
+			treq.set_type(rokid_open_speech_v1_ReqType_TEXT);
 			treq.set_asr(*req->data);
-			req_config(treq, empty_opt);
+			req_config(treq, req->options);
 			rv = 0;
 
+#ifdef SPEECH_STATISTIC
+			cur_trace_info_.id = req->id;
+			cur_trace_info_.req_tp = system_clock::now();
+#endif
+
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.do_request (%d) send text req",
 					req->id);
+#endif
 			break;
 		}
 		case SpeechReqType::VOICE_START: {
 			treq.set_id(req->id);
-			treq.set_type(ReqType::START);
+			treq.set_type(rokid_open_speech_v1_ReqType_START);
 			req_config(treq, req->options);
 
+#ifdef SPEECH_STATISTIC
+			cur_trace_info_.id = req->id;
+			cur_trace_info_.req_tp = system_clock::now();
+#endif
+
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.do_request (%d) send voice start",
 					req->id);
+#endif
 			break;
 		}
 		case SpeechReqType::VOICE_END:
 			treq.set_id(req->id);
-			treq.set_type(ReqType::END);
+			treq.set_type(rokid_open_speech_v1_ReqType_END);
 			rv = 0;
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.do_request (%d) send voice end",
 					req->id);
+#endif
 			break;
 		case SpeechReqType::CANCELLED:
 			treq.set_id(req->id);
-			treq.set_type(ReqType::END);
+			treq.set_type(rokid_open_speech_v1_ReqType_END);
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.do_request (%d) send voice end"
 					" because req cancelled", req->id);
+#endif
+#ifdef SPEECH_STATISTIC
+			finish_cur_req();
+#endif
 			break;
 		case SpeechReqType::VOICE_DATA:
 			treq.set_id(req->id);
-			treq.set_type(ReqType::VOICE);
+			treq.set_type(rokid_open_speech_v1_ReqType_VOICE);
 			treq.set_voice(*req->data);
+#ifdef SPEECH_SDK_DETAIL_TRACE
 			Log::d(tag__, "SpeechImpl.do_request (%d) send voice data",
 					req->id);
+#endif
 			break;
 		default:
 			Log::w(tag__, "SpeechImpl.do_request: (%d) req type is %u, "
@@ -519,7 +577,7 @@ int32_t SpeechImpl::do_request(shared_ptr<SpeechReqInfo>& req) {
 #endif
 	}
 	lock_guard<mutex> locker(resp_mutex_);
-	controller_.refresh_op_time();
+	controller_.refresh_op_time(false);
 	return rv;
 }
 
@@ -529,7 +587,9 @@ void SpeechImpl::gen_results() {
 	SpeechError err;
 	uint32_t timeout;
 
+#ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "thread 'gen_results' run");
+#endif
 	while (true) {
 		unique_lock<mutex> locker(resp_mutex_);
 		timeout = controller_.op_timeout();
@@ -540,6 +600,7 @@ void SpeechImpl::gen_results() {
 			break;
 		locker.lock();
 		if (r == ConnectionOpResult::SUCCESS) {
+			controller_.refresh_op_time(true);
 			gen_result_by_resp(resp);
 		} else if (r == ConnectionOpResult::TIMEOUT) {
 			if (controller_.op_timeout() == 0) {
@@ -550,6 +611,9 @@ void SpeechImpl::gen_results() {
 				resp_cond_.notify_one();
 				locker.unlock();
 				erase_req(id);
+#ifdef SPEECH_STATISTIC
+				finish_cur_req();
+#endif
 				continue;
 			}
 		} else if (r == ConnectionOpResult::CONNECTION_BROKEN) {
@@ -558,8 +622,12 @@ void SpeechImpl::gen_results() {
 			controller_.set_op_error(SPEECH_SERVICE_UNAVAILABLE);
 			resp_cond_.notify_one();
 			locker.unlock();
-			if (op.get())
+			if (op.get()) {
 				erase_req(op->id);
+#ifdef SPEECH_STATISTIC
+				finish_cur_req();
+#endif
+			}
 			continue;
 		} else {
 			shared_ptr<SpeechOperationController::Operation> op
@@ -567,13 +635,19 @@ void SpeechImpl::gen_results() {
 			controller_.set_op_error(SPEECH_UNKNOWN);
 			resp_cond_.notify_one();
 			locker.unlock();
-			if (op.get())
+			if (op.get()) {
 				erase_req(op->id);
+#ifdef SPEECH_STATISTIC
+				finish_cur_req();
+#endif
+			}
 			continue;
 		}
 		locker.unlock();
 	}
+#ifdef SPEECH_SDK_DETAIL_TRACE
 	Log::d(tag__, "thread 'gen_results' quit");
+#endif
 }
 
 void SpeechImpl::gen_result_by_resp(SpeechResponse& resp) {
@@ -609,20 +683,20 @@ void SpeechImpl::gen_result_by_resp(SpeechResponse& resp) {
 		}
 		resin = make_shared<SpeechResultIn>();
 		switch (resp.type()) {
-		case rokid::open::speech::v2::INTERMEDIATE:
+		case rokid_open_speech_v2_RespType_INTERMEDIATE:
 			resin->asr = resp.asr();
 			resin->asr_finish = false;
 			responses_.stream(resp.id(), resin);
 			new_data = true;
 			break;
-		case rokid::open::speech::v2::ASR_FINISH:
+		case rokid_open_speech_v2_RespType_ASR_FINISH:
 			resin->asr = resp.asr();
 			resin->asr_finish = true;
 			responses_.stream(resp.id(), resin);
 			new_data = true;
 			break;
-		case rokid::open::speech::v2::FINISH:
-			if (resp.result() == SpeechErrorCode::SUCCESS) {
+		case rokid_open_speech_v2_RespType_FINISH:
+			if (resp.result() == rokid_open_speech_v1_SpeechErrorCode_SUCCESS) {
 				resin->nlp = resp.nlp();
 				resin->action = resp.action();
 				resin->asr_finish = false;
@@ -637,6 +711,9 @@ void SpeechImpl::gen_result_by_resp(SpeechResponse& resp) {
 				controller_.finish_op();
 				erase_req(resp.id());
 			}
+#ifdef SPEECH_STATISTIC
+			finish_cur_req();
+#endif
 			break;
 		default:
 			Log::w(tag__, "invalid SpeechResponse.type %d", resp.type());
@@ -648,6 +725,16 @@ void SpeechImpl::gen_result_by_resp(SpeechResponse& resp) {
 		}
 	}
 }
+
+#ifdef SPEECH_STATISTIC
+void SpeechImpl::finish_cur_req() {
+	if (cur_trace_info_.id) {
+		cur_trace_info_.resp_tp = system_clock::now();
+		connection_.add_trace_info(cur_trace_info_);
+		cur_trace_info_.id = 0;
+	}
+}
+#endif
 
 shared_ptr<Speech> Speech::new_instance() {
 	return make_shared<SpeechImpl>();
@@ -663,6 +750,7 @@ VoiceOptions& VoiceOptions::operator = (const VoiceOptions& options) {
 	trigger_length = options.trigger_length;
 	voice_power = options.voice_power;
 	skill_options = options.skill_options;
+	voice_extra = options.voice_extra;
 	return *this;
 }
 

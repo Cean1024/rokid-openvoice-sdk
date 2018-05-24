@@ -9,8 +9,8 @@
 #include "speech_connection.h"
 #include "op_ctl.h"
 #include "types.h"
-#include "tts.pb.h"
 #include "pending_queue.h"
+#include "nanopb_decoder.h"
 
 namespace rokid {
 namespace speech {
@@ -24,6 +24,7 @@ public:
 
 	Codec codec;
 	std::string declaimer;
+	uint32_t samplerate;
 };
 
 class TtsImpl : public Tts {
@@ -55,13 +56,17 @@ private:
 
 	void gen_results();
 
-	void gen_result_by_resp(rokid::open::speech::v1::TtsResponse& resp);
+	void gen_result_by_resp(TtsResponse& resp);
 
 	bool gen_result_by_status();
 
 	bool do_request(std::shared_ptr<TtsReqInfo>& req);
 
 	TtsStatus do_ctl_new_op(std::shared_ptr<TtsReqInfo>& req);
+
+#ifdef SPEECH_STATISTIC
+	void finish_cur_req();
+#endif
 
 private:
 	int32_t next_id_;
@@ -77,6 +82,9 @@ private:
 	std::thread* req_thread_;
 	std::thread* resp_thread_;
 	bool initialized_;
+#ifdef SPEECH_STATISTIC
+	TraceInfo cur_trace_info_;
+#endif
 };
 
 } // namespace speech

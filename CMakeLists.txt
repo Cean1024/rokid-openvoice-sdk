@@ -1,8 +1,12 @@
-CMAKE_MINIMUM_REQUIRED(VERSION 2.8)
+CMAKE_MINIMUM_REQUIRED(VERSION 3.2)
 project(rokidspeech)
 set(VERSION 0.1)
 
-option(BUILD_DEMO "Build demo" ON)
+option(BUILD_DEMO "Build demo" OFF)
+option(TEST_MP3 "test tts mp3 codec" OFF)
+option(BUILD_DEBUG "debug or release" OFF)
+option(SPEECH_STATISTIC "speech statistic" ON)
+option(DETAIL_TRACE "print sdk detail trace" ON)
 
 # Configuration fails on < 3.9 if only C++ is enabled (TestBigEndian macro)
 if(NOT CMAKE_VERSION VERSION_LESS 3.9.0)
@@ -74,33 +78,39 @@ if(NOT CMAKE_INSTALL_RPATH AND CMAKE_INSTALL_PREFIX)
 	message(STATUS "Setting install rpath to ${CMAKE_INSTALL_RPATH}")
 endif()
 
-find_package(Protobuf REQUIRED)
-if (NOT Protobuf_FOUND)
-	set(Protobuf_INCLUDE_DIRS ${ProtobufPrefix}/include)
-	set(Protobuf_LIBRARIES -L${ProtobufPrefix}/lib -lprotobuf -Wl,-rpath,${ProtobufPrefix}/lib)
-	set (PROTOBUF_PROTOC_EXECUTABLE ${ProtobufPrefix}/bin/protoc)
-endif()
-# Needed for FindPoco
-#find_package(Poco REQUIRED Net Crypto  NetSSL_OpenSSL)
-find_package(Poco REQUIRED Net Crypto NetSSL)
+find_package(UWS)
+find_package(Opus)
+# if cross compile, don't search openssl dir
+# cross compiler have openssl lib default
+if (CMAKE_TOOLCHAIN_FILE)
+set (OPENSSL_LIBRARIES -lssl -lcrypto)
+else()
 find_package(OpenSSL REQUIRED)
+endif()
 
 set(IGNORED_WARNINGS "-Wno-sign-compare -Wno-unused-parameter -Wno-sign-promo -Wno-error=return-type -Wno-error=non-virtual-dtor")
 
-set(COMMON_CFLAGS "-DSPEECH_SDK_STREAM_QUEUE_TRACE -DSPEECH_SDK_DETAIL_TRACE -std=c++11 -fPIC -frtti -fexceptions")
+set(COMMON_CFLAGS "-std=c++11 -pthread -fPIC -frtti -fexceptions")
 
 SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${IGNORED_WARNINGS} ${COMMON_CFLAGS}")
-
-#
-# Build gennerated protobuf cpp files.
-#
-find_package(Protobuf REQUIRED)
-PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS
-	proto/speech_types.proto
-	proto/auth.proto
-	proto/tts.proto
-	proto/speech.proto
-)
+if (CROSS_COMPILE_CXXFLAGS)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${CROSS_COMPILE_CXXFLAGS}")
+endif()
+if (BUILD_DEBUG)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -O0")
+elseif(CMAKE_TOOLCHAIN_FILE)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Os -s")
+else()
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -s")
+endif()
+if (SPEECH_STATISTIC)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPEECH_STATISTIC")
+endif()
+if (DETAIL_TRACE)
+	set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DSPEECH_SDK_DETAIL_TRACE")
+endif()
+# workaround for g++ threading bug
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wl,--no-as-needed")
 
 # install include files.
 set(HEADER_FILES
@@ -133,35 +143,108 @@ file (GLOB_RECURSE TTS_SOURCES
 	src/tts/*.cc
 )
 set (COMMON_INCLUDE_DIRS include src/common)
-add_library(speech SHARED ${COMMON_SOURCES} ${SPEECH_SOURCES} ${TTS_SOURCES} ${PROTO_SRCS})
+set (PROTO_SRCS
+	nanopb-gen/auth.pb.c
+	nanopb-gen/speech.pb.c
+	nanopb-gen/tts.pb.c
+	nanopb-gen/speech_types.pb.c
+)
+set (NANOPB_SRCS
+	nanopb/pb_common.c
+	nanopb/pb_decode.c
+	nanopb/pb_encode.c
+)
+set (NANOPB_INCLUDE_DIRS
+	nanopb-gen
+	nanopb
+)
+add_library(speech SHARED
+	${COMMON_SOURCES}
+	${SPEECH_SOURCES}
+	${TTS_SOURCES}
+	${PROTO_SRCS}
+	${NANOPB_SRCS}
+)
 target_include_directories(speech PRIVATE
 	${COMMON_INCLUDE_DIRS}
-	${Protobuf_INCLUDE_DIRS}
-	${Poco_INCLUDE_DIRS}
+	${UWS_INCLUDE_DIRS}
 	${OPENSSL_INCLUDE_DIR}
+	${NANOPB_INCLUDE_DIRS}
 	${CMAKE_CURRENT_BINARY_DIR}
 )
-target_link_libraries(speech ${Poco_LIBRARIES} ${Protobuf_LIBRARIES} ${OPENSSL_LIBRARIES})
+target_link_libraries(speech
+	${UWS_LIBRARIES}
+	${OPENSSL_LIBRARIES}
+	-lresolv
+)
 install(TARGETS speech
 	RUNTIME DESTINATION bin
 	LIBRARY DESTINATION lib
 	PUBLIC_HEADER DESTINATION include
 )
 
+if (Opus_FOUND)
+	set (CODEC_SOURCES
+		src/codec/rkcodec.cc
+		include/rkcodec.h
+		src/common/log.cc
+		src/common/log.h
+	)
+	add_library(rkcodec SHARED ${CODEC_SOURCES})
+	target_include_directories(rkcodec PRIVATE
+		${COMMON_INCLUDE_DIRS}
+		${Opus_INCLUDE_DIRS}
+	)
+	target_link_libraries(rkcodec
+		speech
+		${Opus_LIBRARIES}
+	)
+endif()
 
 #
 # build demo
 #
-file(GLOB_RECURSE DEMO_SOURCES demo/*.h demo/*.cc)
-add_executable(rokidspeech.demo ${DEMO_SOURCES})
-target_include_directories(rokidspeech.demo PRIVATE
-	${COMMON_INCLUDE_DIRS}
-	${Poco_INCLUDE_DIRS}
-	${OPENSSL_INCLUDE_DIR}
-	${CMAKE_CURRENT_BINARY_DIR}
+# file(GLOB_RECURSE DEMO_SOURCES demo/*.h demo/*.cc)
+if (BUILD_DEMO)
+	set(DEMO_SOURCES
+		demo/demo.cc
+		demo/simple_wave.cc
+		demo/simple_wave.h
+		demo/speech_stress_test.cc
+		demo/speech_stress_test.h
+	)
+	add_executable(demo ${DEMO_SOURCES})
+	target_include_directories(demo PRIVATE
+		${COMMON_INCLUDE_DIRS}
+		${UWS_INCLUDE_DIRS}
+		${OPENSSL_INCLUDE_DIR}
+		${CMAKE_CURRENT_BINARY_DIR}
+	)
+	target_link_libraries(demo
+		${UWS_LIBRARIES}
+		${OPENSSL_LIBRARIES}
+		${Opus_LIBRARIES}
+		-lz
+		speech
+	)
+	if (Opus_FOUND)
+		target_include_directories(demo PRIVATE ${Opus_INCLUDE_DIRS})
+		target_compile_definitions(demo PRIVATE "HAS_OPUS_CODEC")
+		target_link_libraries(demo rkcodec)
+	endif()
+	if (TEST_MP3)
+		target_compile_definitions(demo PRIVATE "TEST_MP3")
+	endif()
+endif()
+
+add_executable(nanopb-demo
+	${PROTO_SRCS}
+	${NANOPB_SRCS}
+	demo/nanopb_demo.cc
+	src/common/nanopb_encoder.cc
 )
-target_link_libraries(rokidspeech.demo
-	speech
-	${Poco_LIBRARIES}
-	${Protobuf_LIBRARIES}
+target_include_directories(nanopb-demo PRIVATE
+	nanopb
+	nanopb-gen
+	src/common
 )

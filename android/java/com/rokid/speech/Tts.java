@@ -1,5 +1,6 @@
 package com.rokid.speech;
 
+import java.io.InputStream;
 import android.util.Log;
 import android.util.SparseArray;
 import org.json.JSONObject;
@@ -19,6 +20,15 @@ public class Tts extends GenericConfig {
 		PrepareOptions opt;
 		if (configFile != null)
 			opt = parseConfigFile(configFile);
+		else
+			opt = new PrepareOptions();
+		prepare(opt);
+	}
+
+	public void prepare(InputStream is) {
+		PrepareOptions opt;
+		if (is != null)
+			opt = parseConfig(is);
 		else
 			opt = new PrepareOptions();
 		prepare(opt);
@@ -103,6 +113,8 @@ public class Tts extends GenericConfig {
 		v = json_obj.optString("declaimer", null);
 		if (v != null)
 			opt.set_declaimer(v);
+		int i = json_obj.optInt("samplerate", 24000);
+		opt.set_samplerate(i);
 		_sdk_config(_sdk_tts, opt);
 	}
 

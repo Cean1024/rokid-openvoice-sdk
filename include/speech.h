@@ -83,6 +83,7 @@ public:
 	// json string
 	// extra data that will send to skill service
 	std::string skill_options;
+	std::string voice_extra;
 };
 
 class Speech {
@@ -93,7 +94,7 @@ public:
 
 	virtual void release() = 0;
 
-	virtual int32_t put_text(const char* text) = 0;
+	virtual int32_t put_text(const char* text, const VoiceOptions* options = NULL) = 0;
 
 	virtual int32_t start_voice(const VoiceOptions* options = NULL) = 0;
 
